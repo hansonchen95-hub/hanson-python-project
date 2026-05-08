@@ -1,0 +1,277 @@
+<h2>创建任务</h2>
+
+<div style="margin-bottom:20px;">
+
+    名称:
+    <input name="name">
+
+    <br><br>
+
+    登录URL:
+    <input name="login_url" style="width:400px;">
+
+    <br><br>
+
+    下载路径:
+    <input name="download_path"
+           value="downloads"
+           style="width:300px;">
+
+</div>
+
+<hr>
+
+<h3>步骤列表</h3>
+
+<div id="steps"></div>
+
+<button type="button" onclick="addStep()">
+    新增步骤
+</button>
+
+<button type="button" onclick="startPicker()">
+    开始录制
+</button>
+
+<button type="button" onclick="loadXPath()">
+    加载录制结果
+</button>
+
+<button type="button" onclick="saveTask()">
+    保存任务
+</button>
+
+<hr>
+
+<script>
+
+let steps = [];
+
+
+// =========================
+// 新增步骤
+// =========================
+function addStep(stepData=null) {
+
+    let step = stepData || {
+
+        action: "click",
+
+        name: "",
+
+        xpath: "",
+
+        value: "",
+
+        iframe: ""
+
+    };
+
+    steps.push(step);
+
+    renderSteps();
+}
+
+
+// =========================
+// 渲染步骤
+// =========================
+function renderSteps() {
+
+    let html = "";
+
+    steps.forEach((s, index) => {
+
+        html += `
+        <div style="
+            border:1px solid #ccc;
+            padding:10px;
+            margin:10px;
+            background:#f9f9f9;
+        ">
+
+            <b>步骤 ${index + 1}</b>
+
+            <br><br>
+
+            名称:
+            <input
+                value="${s.name}"
+                onchange="steps[${index}].name=this.value"
+            >
+
+            <br><br>
+
+            动作:
+            <select
+                onchange="steps[${index}].action=this.value"
+            >
+
+                <option value="click"
+                    ${s.action==="click" ? "selected" : ""}>
+                    点击
+                </option>
+
+                <option value="input"
+                    ${s.action==="input" ? "selected" : ""}>
+                    输入
+                </option>
+
+            </select>
+
+            <br><br>
+
+            XPath:
+            <input
+                value="${s.xpath}"
+                style="width:500px;"
+                onchange="steps[${index}].xpath=this.value"
+            >
+
+            <br><br>
+
+            输入值:
+            <input
+                value="${s.value}"
+                onchange="steps[${index}].value=this.value"
+            >
+
+            <br><br>
+
+            iframe:
+            <input
+                value="${s.iframe || ''}"
+                style="width:300px;"
+                onchange="steps[${index}].iframe=this.value"
+            >
+
+            <br><br>
+
+            <button onclick="deleteStep(${index})">
+                删除
+            </button>
+
+        </div>
+        `;
+    });
+
+    document.getElementById("steps").innerHTML = html;
+}
+
+
+// =========================
+// 删除步骤
+// =========================
+function deleteStep(index) {
+
+    steps.splice(index, 1);
+
+    renderSteps();
+}
+
+
+// =========================
+// 开始录制
+// =========================
+function startPicker() {
+
+    let url = document.querySelector(
+        "input[name='login_url']"
+    ).value;
+
+    if (!url) {
+
+        alert("请先填写登录URL");
+
+        return;
+    }
+
+    window.open(
+        "/start_picker?url=" + encodeURIComponent(url)
+    );
+}
+
+
+// =========================
+// 加载录制结果
+// =========================
+function loadXPath() {
+
+    fetch("/get_xpath")
+
+    .then(res => res.json())
+
+    .then(data => {
+
+        console.log(data);
+
+        if (!data.steps) {
+
+            alert("暂无录制结果");
+
+            return;
+        }
+
+        // 清空旧steps
+        steps = [];
+
+        // 加载新steps
+        data.steps.forEach(step => {
+
+            steps.push(step);
+
+        });
+
+        // 重新渲染
+        renderSteps();
+
+    });
+}
+
+
+// =========================
+// 保存任务
+// =========================
+function saveTask() {
+
+    let data = {
+
+        name: document.querySelector(
+            "input[name='name']"
+        ).value,
+
+        login_url: document.querySelector(
+            "input[name='login_url']"
+        ).value,
+
+        download_path: document.querySelector(
+            "input[name='download_path']"
+        ).value,
+
+        steps: steps
+    };
+
+    fetch("/create", {
+
+        method: "POST",
+
+        headers: {
+            "Content-Type": "application/json"
+        },
+
+        body: JSON.stringify(data)
+
+    })
+
+    .then(res => res.json())
+
+    .then(res => {
+
+        alert("保存成功");
+
+        console.log(res);
+
+    });
+}
+
+</script>

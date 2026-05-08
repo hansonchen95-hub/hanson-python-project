@@ -1,0 +1,25 @@
+<h2>RPA 管理平台</h2>
+
+<br>
+
+<a href="/create">
+    创建任务
+</a>
+
+<hr>
+
+<h3>已有任务</h3>
+
+{% for task in tasks %}
+
+<div style="margin:10px;">
+
+    {{ task }}
+
+    <a href="/run/{{ task }}">
+        运行
+    </a>
+
+</div>
+
+{% endfor %}
