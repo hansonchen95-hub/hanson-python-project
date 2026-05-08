@@ -1,5 +1,8 @@
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import os
 import sys
 import time
@@ -23,7 +26,7 @@ def get_recorder_js(port):
 (function () {{
 
 // =========================
-// ⭐ 跨页面保持状态（关键修复）
+// ⭐ 跨页面保持状态（window.name）
 // =========================
 if (!window.__RPA_STEP_INDEX__) {{
     window.__RPA_STEP_INDEX__ = 0;
@@ -31,19 +34,20 @@ if (!window.__RPA_STEP_INDEX__) {{
 if (!window.__RPA_PAGE_INDEX__) {{
     window.__RPA_PAGE_INDEX__ = 0;
 }}
-if (!window.__RPA_PAGE_HISTORY__) {{
-    window.__RPA_PAGE_HISTORY__ = [];
-}}
 
-// 在 window.name 中保存状态（即使页面跳转也不会丢失）
+// 从 window.name 恢复状态
 try {{
     let savedState = window.name ? JSON.parse(window.name) : {{}};
-    if (savedState.stepIndex) {{
+    if (savedState.stepIndex !== undefined) {{
         window.__RPA_STEP_INDEX__ = savedState.stepIndex;
-        window.__RPA_PAGE_INDEX__ = savedState.pageIndex;
-        window.__RPA_PAGE_HISTORY__ = savedState.pageHistory || [];
+        console.log(`✅ 恢复状态: 步数=${{window.__RPA_STEP_INDEX__}}, 页数=${{window.__RPA_PAGE_INDEX__}}`);
     }}
-}} catch (e) {{}}
+    if (savedState.pageIndex !== undefined) {{
+        window.__RPA_PAGE_INDEX__ = savedState.pageIndex;
+    }}
+}} catch (e) {{
+    console.warn("恢复状态失败:", e);
+}}
 
 
 // =========================
@@ -101,14 +105,13 @@ function getIframePath(win) {{
 
 
 // =========================
-// 保存当前状态到 window.name
+// 保存状态到 window.name
 // =========================
 function saveState() {{
     try {{
         window.name = JSON.stringify({{
             stepIndex: window.__RPA_STEP_INDEX__,
-            pageIndex: window.__RPA_PAGE_INDEX__,
-            pageHistory: window.__RPA_PAGE_HISTORY__
+            pageIndex: window.__RPA_PAGE_INDEX__
         }});
     }} catch (e) {{
         console.warn("保存状态失败:", e);
@@ -117,7 +120,7 @@ function saveState() {{
 
 
 // =========================
-// 绑定事件（关键）
+// 绑定事件
 // =========================
 function bind(win) {{
 
@@ -127,12 +130,10 @@ function bind(win) {{
     win.document.addEventListener("mousedown", function(e) {{
 
         let el = e.target;
-
         if (!el) return;
 
         let xpath = getXPath(el);
         let iframePath = getIframePath(win);
-
         let tag = el.tagName ? el.tagName.toLowerCase() : "";
 
         let action = "click";
@@ -157,8 +158,6 @@ function bind(win) {{
         el.style.outline = "3px solid red";
 
         window.__RPA_STEP_INDEX__++;
-        
-        // 保存状态
         saveState();
 
         console.log(`✅ 录制: [${{window.__RPA_PAGE_INDEX__}}页-步${{window.__RPA_STEP_INDEX__}}] ${{name}}`);
@@ -178,13 +177,12 @@ function bind(win) {{
                 value: "",
                 url: window.location.href
             }})
-        }}).catch(e => console.warn("发送失败:", e));
+        }}).catch(e => console.warn("发送步骤失败:", e));
 
     }}, true);
 
-    // iframe递归
+    // iframe递归绑定
     let iframes = win.document.getElementsByTagName("iframe");
-
     for (let i = 0; i < iframes.length; i++) {{
         try {{
             bind(iframes[i].contentWindow);
@@ -194,92 +192,35 @@ function bind(win) {{
 
 
 // =========================
-// ⭐ 页面跳转监听（MutationObserver + URL 变化）
-// =========================
-function setupPageTransitionDetection() {{
-    let lastUrl = window.location.href;
-    
-    // 方案1: 监听 URL 变化
-    const checkUrlChange = setInterval(() => {{
-        if (window.location.href !== lastUrl) {{
-            console.log(`🔄 页面跳转: ${{lastUrl}} → ${{window.location.href}}`);
-            window.__RPA_PAGE_INDEX__++;
-            window.__RPA_PAGE_HISTORY__.push(window.location.href);
-            lastUrl = window.location.href;
-            saveState();
-            
-            // 延迟重新绑定（等待新页面加载）
-            setTimeout(() => {{
-                // 清除旧的绑定标记
-                delete document.__proto__.__rpa_bound__;
-                window.__rpa_bound__ = false;
-                
-                bind(window);
-                console.log(`✅ 新页面绑定完成 [${{window.__RPA_PAGE_INDEX__}}页]`);
-            }}, 800);
-        }}
-    }}, 300);
-    
-    // 方案2: beforeunload 前保存状态
-    window.addEventListener("beforeunload", () => {{
-        saveState();
-    }});
-    
-    // 方案3: 监听 hashchange（支持 SPA 应用）
-    window.addEventListener("hashchange", () => {{
-        console.log("🔄 Hash变化检测到");
-        window.__RPA_PAGE_INDEX__++;
-        window.__RPA_PAGE_HISTORY__.push(window.location.href);
-        saveState();
-        
-        setTimeout(() => {{
-            window.__rpa_bound__ = false;
-            bind(window);
-            console.log(`✅ 新页面绑定完成 [${{window.__RPA_PAGE_INDEX__}}页]`);
-        }}, 500);
-    }});
-}}
-
-
-// =========================
-// 定期检查和恢复（保活机制）
+// 定期重新绑定（保证新页面也有事件）
 // =========================
 function keepAlive() {{
     setInterval(() => {{
         try {{
-            // 定期重新绑定（防止事件丢失）
+            // 清除旧的绑定标记，强制重新绑定
+            window.__rpa_bound__ = false;
             bind(window);
-            
-            // 检查状态是否在 window.name 中
-            try {{
-                let savedState = window.name ? JSON.parse(window.name) : {{}};
-                if (savedState.stepIndex && savedState.stepIndex > window.__RPA_STEP_INDEX__) {{
-                    window.__RPA_STEP_INDEX__ = savedState.stepIndex;
-                }}
-            }} catch (e) {{}}
         }} catch (e) {{
             console.warn("保活检查异常:", e);
         }}
-    }}, 2000);
+    }}, 3000);
 }}
 
 
 // =========================
-// 启动录制器
+// 启动
 // =========================
 bind(window);
-setupPageTransitionDetection();
 keepAlive();
 
 console.log("✅ RPA Recorder 已启动");
-console.log(`📊 初始状态 - 步数: ${{window.__RPA_STEP_INDEX__}}, 页数: ${{window.__RPA_PAGE_INDEX__}}`);
 
 }})();
 """
 
 
 # =========================
-# 启动录制器
+# 启动录制器（Selenium 版本 - 支持页面跳转）
 # =========================
 def start_picker(url, port):
 
@@ -288,6 +229,11 @@ def start_picker(url, port):
     print("="*70 + "\n")
 
     options = webdriver.ChromeOptions()
+    
+    # 禁用沙箱模式（某些系统需要）
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
     service = Service(get_driver_path())
 
     driver = webdriver.Chrome(
@@ -298,21 +244,71 @@ def start_picker(url, port):
     driver.get(url)
     time.sleep(2)
 
-    # ⭐ 注入脚本
+    # 第一次注入脚本
     driver.execute_script(get_recorder_js(port))
+    print("✅ 初始页面脚本已注入\n")
 
-    print("✅ 录制器已启动，功能说明：\n")
-    print("  📌 自动检测页面跳转")
-    print("  📝 支持多页面录制")
-    print("  🖱️  点击任意元素自动记录")
-    print("  ⌨️  输入框会自动识别")
-    print("  💾 步骤自动发送到服务器")
-    print("\n⏸️  关闭浏览器即可结束录制\n")
-    print("="*70 + "\n")
+    # ⭐ 关键：监听页面加载，重复注入脚本
+    print("📌 监听页面跳转中...\n")
+    
+    last_url = driver.current_url
+    no_change_count = 0
+    injection_count = 1
 
     try:
         while True:
-            time.sleep(1)
+            try:
+                time.sleep(1)
+                
+                current_url = driver.current_url
+                
+                # 检测 URL 变化
+                if current_url != last_url:
+                    print(f"\n🔄 检测到页面跳转: {last_url} → {current_url}")
+                    last_url = current_url
+                    
+                    # 等待新页面加载
+                    try:
+                        WebDriverWait(driver, 5).until(
+                            lambda d: d.execute_script('return document.readyState') == 'complete'
+                        )
+                    except:
+                        pass
+                    
+                    time.sleep(1)
+                    
+                    # ⭐ 重新注入脚本
+                    try:
+                        driver.execute_script(get_recorder_js(port))
+                        injection_count += 1
+                        print(f"✅ 新页面脚本已注入 (第 {injection_count} 次)")
+                        print(f"✅ 页面标记: page_index++")
+                        
+                        # 更新页面索引
+                        driver.execute_script("""
+                            window.__RPA_PAGE_INDEX__++;
+                            window.name = JSON.stringify({
+                                stepIndex: window.__RPA_STEP_INDEX__,
+                                pageIndex: window.__RPA_PAGE_INDEX__
+                            });
+                            console.log(`页面递增到: ${{window.__RPA_PAGE_INDEX__}}`);
+                        """)
+                        
+                        no_change_count = 0
+                    except Exception as e:
+                        print(f"❌ 脚本注入失败: {e}")
+                
+                # 检查浏览器是否还打开
+                try:
+                    driver.current_window_handle
+                except:
+                    print("\n❌ 浏览器已关闭")
+                    break
+                    
+            except Exception as e:
+                print(f"⚠️  异常: {e}")
+                time.sleep(1)
+
     except KeyboardInterrupt:
         print("\n⏹️  录制已停止")
     finally:
@@ -320,3 +316,7 @@ def start_picker(url, port):
             driver.quit()
         except:
             pass
+        
+        print("\n" + "="*70)
+        print("✅ 录制器已关闭")
+        print("="*70 + "\n")
