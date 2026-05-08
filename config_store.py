@@ -1,0 +1,17 @@
+import json
+import os
+
+CONFIG_FILE = "configs/tasks.json"
+
+
+def load_tasks():
+    if not os.path.exists(CONFIG_FILE):
+        return []
+
+    with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_tasks(tasks):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(tasks, f, ensure_ascii=False, indent=2)
