@@ -15,7 +15,7 @@ def get_driver_path():
 
 
 # =========================
-# Recorder JS（稳定版）
+# Recorder JS（多页面支持版本）
 # =========================
 def get_recorder_js(port):
 
@@ -32,9 +32,11 @@ window.__RPA_RECORDER__ = true;
 
 
 // =========================
-// stepIndex（跨页面不丢）
+// stepIndex 和 currentPageIndex
 // =========================
 window.__stepIndex = window.__stepIndex || 0;
+window.__currentPageIndex = window.__currentPageIndex || 0;
+window.__pageHistory = window.__pageHistory || [window.location.href];
 
 
 // =========================
@@ -140,11 +142,13 @@ function bind(win) {{
             }},
             body: JSON.stringify({{
                 index: window.__stepIndex,
+                page_index: window.__currentPageIndex,
                 name,
                 action,
                 xpath,
                 iframe: iframePath,
-                value: ""
+                value: "",
+                url: window.location.href
             }})
         }});
 
@@ -158,6 +162,29 @@ function bind(win) {{
             bind(iframes[i].contentWindow);
         }} catch (e) {{}}
     }}
+}}
+
+
+// =========================
+// 页面跳转检测（新增）
+// =========================
+function detectPageTransition() {{
+    let lastUrl = window.location.href;
+    
+    setInterval(() => {{
+        if (window.location.href !== lastUrl) {{
+            console.log("🔄 页面已跳转:", lastUrl, "→", window.location.href);
+            window.__currentPageIndex++;
+            window.__pageHistory.push(window.location.href);
+            lastUrl = window.location.href;
+            
+            // 重新绑定新页面元素
+            setTimeout(() => {{
+                bind(window);
+                console.log("♻️ 新页面元素绑定完成");
+            }}, 1000);
+        }}
+    }}, 500);
 }}
 
 
@@ -183,9 +210,10 @@ function keepAlive() {{
 // 启动
 // =========================
 bind(window);
+detectPageTransition();
 keepAlive();
 
-console.log("✅ RPA Recorder 稳定版已启动");
+console.log("✅ RPA Recorder 多页面版已启动");
 
 }})();
 """
@@ -211,7 +239,7 @@ def start_picker(url, port):
     driver.execute_script(get_recorder_js(port))
 
     print("👉 录制器已启动")
-    print("👉 登录后继续录制（不会重置）")
+    print("👉 支持多页面录制（页面跳转自动检测）")
     print("👉 关闭浏览器结束")
 
     while True:
