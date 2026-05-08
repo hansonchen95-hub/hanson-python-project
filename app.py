@@ -236,6 +236,7 @@ def get_free_port():
     s.close()
 
     return port
+
 # =========================
 # 启动
 # =========================
@@ -246,38 +247,54 @@ if __name__ == "__main__":
 
 
     # =========================
-    # ⭐ 等待 Flask 真正可访问
+    # ⭐ 等待 Flask 真正可访问（改进版）
     # =========================
     def wait_and_open(port):
 
-        for _ in range(50):  # 最多等5秒
+        print("\n⏳ 等待 Flask 启动完成...")
+
+        for attempt in range(100):  # 最多等10秒
 
             try:
                 s = socket.socket()
                 s.settimeout(0.2)
                 s.connect(("127.0.0.1", port))
                 s.close()
+                print(f"✅ Flask 已准备就绪 (第 {attempt + 1} 次尝试)")
                 break
             except:
+                if attempt % 10 == 0:
+                    print(f"   等待中... ({attempt}0ms)")
                 time.sleep(0.1)
 
+        # 打开浏览器
+        print("🌐 打开浏览器中...\n")
         try:
-            webbrowser.open(f"http://127.0.0.1:{port}")
+            webbrowser.open(f"http://127.0.0.1:{port}", new=1)
+            time.sleep(1)
+            # 再激活一次，确保窗口在前台
+            webbrowser.open(f"http://127.0.0.1:{port}", new=0)
         except Exception as e:
-            print("浏览器打开失败:", e)
+            print(f"❌ 浏览器打开失败: {e}\n")
+            print(f"请手动打开: http://127.0.0.1:{port}\n")
 
     # =========================
     # 启动浏览器线程
     # =========================
-    threading.Thread(
+    browser_thread = threading.Thread(
         target=wait_and_open,
         args=(app.config["PORT"],),
         daemon=True
-    ).start()
+    )
+    browser_thread.start()
 
     # =========================
     # Flask启动
     # =========================
+    print("\n" + "="*70)
+    print("🚀 RPA 任务管理系统启动中...")
+    print("="*70 + "\n")
+
     app.run(
         debug=False,
         use_reloader=False,
